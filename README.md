@@ -3,39 +3,61 @@
 Certificate-enrollment UI for the Fikua Lab. Served at
 **<https://cert.lab.fikua.com>**.
 
-This hostname is the only one of the lab that uses **mutual TLS**: the
-client may present an X.509 certificate, the page reads back the
-subject/issuer/serial via headers, and the UI shows the user what their
-client cert looks like to a relying party.
+The page asks the browser to present a client X.509 certificate (mutual
+TLS), reads it back from a `/cert-info` endpoint, and shows the user
+what the certificate looks like to a relying party.
 
-In the old nginx setup, mTLS was terminated with
-`ssl_verify_client optional_no_ca` and the cert fields were exposed
-through `$ssl_client_*` variables. Under ADR 0008 the handshake moves
-to **Cloudflare API Shield / mTLS** at the edge, and the
-`/cert-info` endpoint becomes a tiny Worker function that reads the
-`Cf-Cert-Subject-Dn` / `Cf-Cert-Issuer-Dn` / … headers Cloudflare
-sets on every authenticated request.
+## How mTLS works here
+
+mTLS is terminated by **Cloudflare** at the edge (ADR 0008):
+
+1. Cloudflare → SSL/TLS → Client Certificates is enabled for
+   `cert.lab.fikua.com`, in **"request, no CA validation"** mode (matches
+   the old nginx `optional_no_ca` behaviour).
+2. When the client presents a cert, Cloudflare attaches the parsed
+   fields to `request.cf.tlsClientAuth`.
+3. A tiny Worker function in `src/index.ts` answers `GET /cert-info`
+   with the same `X-Client-*` headers the old nginx setup emitted —
+   `X-Client-Subject`, `X-Client-Issuer`, `X-Client-Serial`, etc. —
+   so the frontend (`app.js`) does not have to change.
+4. Every other path falls through to the static assets binding
+   (`index.html`, `style.css`, `app.js`, `shared/*`).
 
 ## What lives here
 
 ```text
 .
-├── index.html
+├── src/
+│   └── index.ts      Worker function: /cert-info + static assets fallback
+├── index.html        Frontend
 ├── style.css
-├── app.js
+├── app.js            Reads /cert-info headers and renders the cert details
 ├── favicon.svg
-└── shared/         Vendored shared assets (consent banner, error pages)
+├── shared/           Vendored shared assets (consent banner, error pages)
+├── wrangler.toml     Worker + Static Assets binding
+├── tsconfig.json
+└── package.json      wrangler + @cloudflare/workers-types
 ```
 
-Pure static (the `/cert-info` Worker function will be added when mTLS
-is wired up at the Cloudflare edge).
+## Local development
+
+```bash
+npm ci
+npm run dev          # wrangler dev — opens the Worker locally
+npm run typecheck
+```
+
+`wrangler dev` does not perform real mTLS termination locally, so
+`/cert-info` will return the "no certificate presented" shape. Test
+mTLS end-to-end by deploying a preview build.
 
 ## Hosting
 
-- **Production:** Cloudflare Workers Static Assets (project
-  `fikua-lab-cert`), custom domain `cert.lab.fikua.com`.
-- **mTLS:** terminated by Cloudflare API Shield; the hostname must be
-  registered there with the appropriate authentication scheme.
+- **Production:** Cloudflare Workers (project `fikua-lab-cert`), custom
+  domain `cert.lab.fikua.com`.
+- **mTLS:** terminated at the Cloudflare edge — see "How mTLS works"
+  above. The hostname must be added under SSL/TLS → Client
+  Certificates → Hosts.
 
 ## Architecture decisions
 
