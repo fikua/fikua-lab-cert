@@ -17,7 +17,7 @@
 
 (() => {
     const params = new URLSearchParams(window.location.search);
-    const returnUrl = params.get('return_url') || 'https://issuer.lab.fikua.com';
+    const returnUrl = params.get('return_url') || 'https://lab.fikua.com/issuer';
 
     const phases = {
         loading: document.getElementById('phase-loading'),

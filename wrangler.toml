@@ -1,23 +1,26 @@
-# Cloudflare Worker (Static Assets + handler) configuration.
+# Cloudflare Worker (Static Assets + handler) configuration for
+# https://cert.fikua.com.
 #
-# Unlike the other lab frontends this project ships a Worker function:
-# /cert-info reads request.cf.tlsClientAuth that Cloudflare populates when
-# mTLS is terminated at the edge, and surfaces the parsed cert fields back
-# to the frontend via X-Client-* headers (same contract the old nginx
-# setup used). All other paths are served from the repository root as
-# static assets.
+# /cert-info is answered by the Worker function in src/index.ts using
+# request.cf.tlsClientAuth that Cloudflare populates when mTLS is
+# terminated at the edge. All other paths are served from the
+# repository root as static assets.
+#
+# This project does NOT proxy to the lab backend, so it does not need
+# the LAB_BACKEND_ORIGIN var nor the CF_ACCESS service-token secrets.
+# Edge mTLS is configured outside of wrangler at:
+#   Cloudflare → SSL/TLS → Client Certificates → Hosts → cert.fikua.com
+#   (mode "Request client certificate"; no CA validation).
 
 name = "fikua-lab-cert"
 main = "src/index.ts"
 compatibility_date = "2026-05-22"
 
+routes = [
+    { pattern = "cert.fikua.com/*", custom_domain = false, zone_name = "fikua.com" }
+]
+
 [assets]
 directory = "./"
 binding = "ASSETS"
 not_found_handling = "404-page"
-
-# mTLS at the edge is configured outside of wrangler:
-#   Cloudflare dashboard → SSL/TLS → Client Certificates → enable mTLS for
-#   the cert.lab.fikua.com host (mode: "Request client certificate"; do
-#   NOT require a specific CA). This keeps the demo's "optional_no_ca"
-#   behaviour.
