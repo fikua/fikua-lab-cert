@@ -21,6 +21,6 @@ routes = [
 ]
 
 [assets]
-directory = "./"
+directory = "./public"
 binding = "ASSETS"
 not_found_handling = "404-page"
