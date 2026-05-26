@@ -1,0 +1,15 @@
+# Local-only compose for ad-hoc testing of the built image.
+#
+# The production compose used by the VPS lives at deploy/compose.yaml
+# (source of truth, scp'd by the deploy workflow). This file builds the
+# image locally and runs it without Traefik labels — the production
+# routing only makes sense behind Traefik on the VPS.
+
+services:
+  cert:
+    build: .
+    image: fikua/fikua-lab-cert:dev
+    container_name: fikua-lab-cert-dev
+    ports:
+      - "8080:80"
+    restart: unless-stopped

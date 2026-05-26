@@ -1,0 +1,58 @@
+# cert.fikua.com — static frontend + /cert-info, fronted by Traefik
+# which terminates TLS and performs mTLS without CA validation
+# (clientAuthType=RequestClientCert).
+#
+# Source of truth:  github.com/fikua/fikua-lab-cert/deploy/compose.yaml
+# Image:            docker.io/fikua/fikua-lab-cert
+# Public URL:       https://cert.fikua.com
+# Host path on VPS: /opt/vps/projects/fikua-lab/cert/compose.yaml
+#
+# Prerequisites on the VPS (one-time):
+# 1. Cloudflare DNS for cert.fikua.com is DNS-only (grey cloud). A proxied
+#    record would make Cloudflare terminate TLS at the edge and the client
+#    cert would never reach our Traefik.
+# 2. The `mtls-optional-no-ca` tls option and `cert-passtls` middleware are
+#    declared in Traefik's dynamic config at
+#    /opt/vps/platform/traefik/dynamic/cert-mtls.yml (copied from
+#    traefik-dynamic.yml in this repo's root).
+
+services:
+  cert:
+    image: fikua/fikua-lab-cert:${CERT_VERSION:-latest}
+    container_name: fikua-lab-cert
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.cert.rule: "Host(`cert.fikua.com`)"
+      traefik.http.routers.cert.entrypoints: "websecure"
+      traefik.http.routers.cert.tls: "true"
+      traefik.http.routers.cert.tls.certresolver: "cloudflare"
+      traefik.http.routers.cert.tls.options: "mtls-optional-no-ca@file"
+      traefik.http.routers.cert.middlewares: "cert-passtls@file"
+      traefik.http.routers.cert.service: "cert"
+      traefik.http.services.cert.loadbalancer.server.port: "80"
+    healthcheck:
+      # nginx serves the static index.html at /, so a 200 there is enough to
+      # consider the container healthy. wget is shipped by nginx:alpine.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "3"
+
+networks:
+  traefik-public:
+    name: traefik-public
+    external: true

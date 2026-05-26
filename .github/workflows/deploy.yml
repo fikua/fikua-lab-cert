@@ -1,0 +1,119 @@
+name: Deploy to VPS
+
+# Mirrors the DSS deploy workflow. Reaches the VPS through Cloudflare Access
+# (vps.fikua.com tunnel + service token), scp's the compose file from
+# deploy/compose.yaml as the source of truth, then `docker compose pull && up -d`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy (defaults to "latest")'
+        required: false
+        default: 'latest'
+        type: string
+  release:
+    types: [published]
+
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.image_tag || github.event.release.tag_name || 'latest' }} to prd
+    runs-on: ubuntu-latest
+    # The 'prd' environment must be configured in Settings → Environments with
+    # required reviewers so an autotrigger from a release publish stays paused
+    # until somebody approves the run.
+    environment:
+      name: prd
+      url: https://cert.fikua.com/
+
+    steps:
+      - name: Checkout (for the compose file)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+
+      - name: Install cloudflared
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o /usr/local/bin/cloudflared
+          chmod +x /usr/local/bin/cloudflared
+          cloudflared --version
+
+      - name: Configure SSH client (tunnel + key + known_hosts)
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # GitHub secrets strip trailing newlines but OpenSSH refuses keys
+          # without one ("error in libcrypto"). printf %s\n adds it back.
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/vps_id
+          chmod 600 ~/.ssh/vps_id
+          ssh-keygen -y -f ~/.ssh/vps_id >/dev/null
+
+          cat <<'EOF' > ~/.ssh/config
+          Host vps.fikua.com
+              User ubuntu
+              IdentityFile ~/.ssh/vps_id
+              IdentitiesOnly yes
+              StrictHostKeyChecking accept-new
+              ProxyCommand cloudflared access ssh --hostname %h
+              ServerAliveInterval 30
+              ServerAliveCountMax 4
+          EOF
+          chmod 600 ~/.ssh/config
+
+          echo "CF_ACCESS_CLIENT_ID=$CF_ACCESS_CLIENT_ID" >> "$GITHUB_ENV"
+          echo "CF_ACCESS_CLIENT_SECRET=$CF_ACCESS_CLIENT_SECRET" >> "$GITHUB_ENV"
+
+      - name: Copy compose.yaml to the VPS
+        run: |
+          scp deploy/compose.yaml vps.fikua.com:/tmp/cert-compose.yaml
+          ssh vps.fikua.com '
+            sudo mkdir -p /opt/vps/projects/fikua-lab/cert
+            sudo cp /tmp/cert-compose.yaml /opt/vps/projects/fikua-lab/cert/compose.yaml
+            sudo chown ubuntu:ubuntu /opt/vps/projects/fikua-lab/cert/compose.yaml
+          '
+
+      - name: Pull and restart on the VPS
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag || github.event.release.tag_name || 'latest' }}
+        run: |
+          # Release tag "v0.3.1" → image tag "0.3.1".
+          NORMALISED_TAG="${IMAGE_TAG#v}"
+          echo "Deploying fikua/fikua-lab-cert:$NORMALISED_TAG"
+          ssh vps.fikua.com "
+            set -e
+            cd /opt/vps/projects/fikua-lab/cert
+            CERT_VERSION='$NORMALISED_TAG' sudo --preserve-env=CERT_VERSION docker compose pull
+            CERT_VERSION='$NORMALISED_TAG' sudo --preserve-env=CERT_VERSION docker compose up -d
+          "
+
+      - name: Wait for the container to become healthy
+        run: |
+          for i in $(seq 1 24); do
+            status=$(ssh vps.fikua.com "sudo docker inspect --format '{{.State.Health.Status}}' fikua-lab-cert 2>/dev/null || echo missing")
+            echo "attempt $i: $status"
+            if [ "$status" = "healthy" ]; then
+              echo "✅ container is healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ container did not become healthy within 120s"
+          ssh vps.fikua.com 'sudo docker logs --tail 80 fikua-lab-cert' || true
+          exit 1
+
+      - name: Smoke-test through Traefik (Host header)
+        # cert.fikua.com is DNS-only on Cloudflare so the VPS Traefik terminates
+        # TLS itself. -k skips the self-vs-LE chain check (the cert is real but
+        # SNI may surprise curl when bypassing DNS via 127.0.0.1).
+        run: |
+          ssh vps.fikua.com \
+            'curl -sIk --resolve cert.fikua.com:443:127.0.0.1 https://cert.fikua.com/ | head -5'

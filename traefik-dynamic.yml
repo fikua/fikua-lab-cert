@@ -1,0 +1,51 @@
+# Traefik dynamic config for cert.fikua.com mTLS.
+#
+# Deploy by copying this file to the Traefik dynamic directory on the VPS:
+#   /opt/vps/platform/traefik/dynamic/cert-mtls.yml
+# (mounted into the container at /etc/traefik/dynamic — see
+# platform-services/compose.yaml). Traefik picks it up live; no restart
+# needed.
+#
+# Source of truth for the dynamic file itself should eventually live in
+# fikua-platform-iac/platform-services/traefik/dynamic/. Keeping a copy
+# here as well so the cert service is self-contained for local reference.
+
+tls:
+  options:
+    # `RequestClientCert` = ask the client for a cert but accept whatever
+    # it presents (or nothing). This is the Go-native equivalent of
+    # nginx's `ssl_verify_client optional_no_ca`: no caFiles needed,
+    # the certificate chain is NOT validated. We rely on the
+    # passTLSClientCert middleware below to forward whatever the client
+    # sent to the backend, which then displays it without trusting it.
+    mtls-optional-no-ca:
+      clientAuth:
+        clientAuthType: RequestClientCert
+
+http:
+  middlewares:
+    # Forward the parsed client certificate to the backend in the
+    # X-Forwarded-Tls-Client-Cert-Info header. nginx maps these fields
+    # into the historical X-Client-* contract that app.js consumes.
+    cert-passtls:
+      passTLSClientCert:
+        info:
+          notAfter: true
+          notBefore: true
+          serialNumber: true
+          subject:
+            country: true
+            province: true
+            locality: true
+            organization: true
+            commonName: true
+            serialNumber: true
+            domainComponent: true
+          issuer:
+            country: true
+            province: true
+            locality: true
+            organization: true
+            commonName: true
+            serialNumber: true
+            domainComponent: true
