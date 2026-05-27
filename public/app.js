@@ -43,32 +43,50 @@
         return parts;
     }
 
+    // Parse Traefik's passTLSClientCert header. The value is URL-encoded and
+    // semicolon-separated, with each segment shaped like `Key="value"`. See
+    // https://doc.traefik.io/traefik/middlewares/http/passtlsclientcert/.
+    function parseCertInfo(raw) {
+        if (!raw) return {};
+        const decoded = decodeURIComponent(raw);
+        const fields = {};
+        decoded.split(';').forEach(segment => {
+            const match = segment.match(/^([A-Za-z]+)="(.*)"$/);
+            if (match) fields[match[1]] = match[2];
+        });
+        return fields;
+    }
+
+    // NB/NA arrive as Unix timestamps (seconds). Render them as YYYY-MM-DD so
+    // the UI matches what a user would expect from a cert viewer.
+    function formatUnixDate(ts) {
+        const n = parseInt(ts, 10);
+        if (!Number.isFinite(n) || n <= 0) return '-';
+        return new Date(n * 1000).toISOString().slice(0, 10);
+    }
+
     function fetchCertificate() {
         fetch('/cert-info')
             .then(res => {
                 const verified = res.headers.get('X-Client-Verify') || '';
-                const subjectRaw = res.headers.get('X-Client-Subject') || '';
-                const issuerRaw = res.headers.get('X-Client-Issuer') || '';
-                const serial = res.headers.get('X-Client-Serial') || '-';
-                const fingerprint = res.headers.get('X-Client-Fingerprint') || '-';
-                const validFrom = res.headers.get('X-Client-Valid-From') || '-';
-                const validTo = res.headers.get('X-Client-Valid-To') || '-';
+                const rawCertInfo = res.headers.get('X-Client-Cert-Info') || '';
 
-                if (verified === 'NONE' || !subjectRaw) {
+                if (verified !== '1' || !rawCertInfo) {
                     showPhase('nocert');
                     return;
                 }
 
-                const subject = parseDN(subjectRaw);
-                const issuerDN = parseDN(issuerRaw);
+                const info = parseCertInfo(rawCertInfo);
+                const subject = parseDN(info.Subject || '');
+                const issuerDN = parseDN(info.Issuer || '');
 
                 const cert = {
-                    cn: subject.CN || subjectRaw,
-                    issuer: issuerDN.CN || issuerDN.O || issuerRaw,
-                    serial: serial,
-                    fingerprint: fingerprint,
-                    valid_from: validFrom,
-                    valid_to: validTo,
+                    cn: subject.CN || info.Subject || '-',
+                    issuer: issuerDN.CN || issuerDN.O || info.Issuer || '-',
+                    serial: info.SerialNumber || '-',
+                    fingerprint: '-',
+                    valid_from: formatUnixDate(info.NB),
+                    valid_to: formatUnixDate(info.NA),
                     verified: verified
                 };
 
