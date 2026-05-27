@@ -43,12 +43,14 @@
         return parts;
     }
 
-    // Parse Traefik's passTLSClientCert header. The value is URL-encoded and
-    // semicolon-separated, with each segment shaped like `Key="value"`. See
+    // Parse Traefik's passTLSClientCert header. The value is
+    // application/x-www-form-urlencoded-style: `+` represents a space and
+    // `%XX` are escaped bytes. Segments are semicolon-separated and shaped
+    // like `Key="value"`. See
     // https://doc.traefik.io/traefik/middlewares/http/passtlsclientcert/.
     function parseCertInfo(raw) {
         if (!raw) return {};
-        const decoded = decodeURIComponent(raw);
+        const decoded = decodeURIComponent(raw.replace(/\+/g, ' '));
         const fields = {};
         decoded.split(';').forEach(segment => {
             const match = segment.match(/^([A-Za-z]+)="(.*)"$/);
