@@ -45,7 +45,7 @@ LoTL of ~400 CAs; see ADR 0008r1).
 │   ├── app.js                  Reads /cert-info headers and renders the cert
 │   ├── style.css
 │   ├── favicon.svg
-│   └── shared/                 Vendored shared assets (consent banner, error pages)
+│   └── shared/                 Vendored shared assets (error pages)
 ├── src/index.ts                Legacy Cloudflare Worker (kept for reference)
 ├── wrangler.toml               Legacy Worker config (kept for reference)
 ├── tsconfig.json
