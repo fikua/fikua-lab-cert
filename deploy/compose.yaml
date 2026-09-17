@@ -15,6 +15,11 @@
 #    declared in Traefik's dynamic config at
 #    /opt/vps/platform/traefik/dynamic/cert-mtls.yml (copied from
 #    traefik-dynamic.yml in this repo's root).
+#
+# name: groups this service under "fikua-digital-identity-lab" in
+# Docker/Dozzle, alongside every other Fikua Lab service.
+
+name: fikua-digital-identity-lab
 
 services:
   cert:
