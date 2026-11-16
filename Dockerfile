@@ -8,7 +8,7 @@
 # forwards the parsed cert to this container in the
 # `X-Forwarded-Tls-Client-Cert-Info` header. See ADR 0008r1.
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY public/    /usr/share/nginx/html/
