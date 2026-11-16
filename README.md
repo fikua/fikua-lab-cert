@@ -35,11 +35,10 @@ LoTL of ~400 CAs; see ADR 0008r1).
 ├── Dockerfile                  nginx:alpine + nginx.conf + public/
 ├── nginx.conf                  /cert-info mapper + static fallback
 ├── compose.yaml                Local dev compose (builds + runs on :8080)
-├── deploy/compose.yaml         Production compose (source of truth for the VPS)
 ├── traefik-dynamic.yml         Traefik tls.options + passTLSClientCert middleware
 ├── .github/workflows/
-│   ├── release.yml             Build & push multi-arch image to Docker Hub
-│   └── deploy.yml              SSH via Cloudflare Access → pull + up -d on VPS
+│   ├── ci.yml                  gitleaks + multi-arch image to GHCR (shared workflows)
+│   └── codeql.yml              CodeQL (shared workflow)
 ├── public/
 │   ├── index.html
 │   ├── app.js                  Reads /cert-info headers and renders the cert
@@ -66,7 +65,7 @@ docker compose up --build
 
 `/cert-info` will not return real cert data locally — that requires
 Traefik in front of the container with mTLS configured. To test end to
-end, ship a preview build via the deploy workflow.
+end, deploy a build through `fikua-platform-iac` (see below).
 
 ## Deployment
 
@@ -82,31 +81,28 @@ These steps cannot be automated from CI and must be done once:
    ```
 
    (scp the file there first; Traefik picks it up live, no restart needed.)
+   Today this file lives in `fikua-platform-iac`
+   (`platform-services/traefik/dynamic/cert-mtls.yml`) and Ansible syncs it.
 
 2. Ensure the Cloudflare DNS record for `cert.fikua.com` is **DNS-only**
    (grey cloud). Managed via OpenTofu in `fikua-platform-iac` — already
    applied.
 
-### Per-release deploys (CI/CD)
+### Releases and deploys
 
-After bootstrap, every release goes through GitHub Actions:
+This repository only publishes the image; it never touches the VPS.
 
-1. **Build**: pushing to `main` or tagging `v*.*.*` triggers
-   `release.yml`, which builds a multi-arch image and pushes it to
-   Docker Hub (`fikua/fikua-lab-cert`).
-2. **Deploy**: a published release auto-triggers `deploy.yml`; the run
-   pauses until a reviewer approves the `prd` environment. Manual
-   deploys via `workflow_dispatch` are also available with a custom
-   `image_tag` input.
+1. **Build**: every push to `main` publishes `ghcr.io/fikua/fikua-lab-cert`
+   as `latest` and `sha-<short>` (`.github/workflows/ci.yml`, shared
+   workflows from `fikua-ci-workflows`).
+2. **Release**: `gh release create vX.Y.Z` publishes the image as `X.Y.Z`.
+3. **Deploy**: `fikua-platform-iac` pins the version in
+   `projects/fikua-lab/cert/compose.yaml` (the production compose; there is
+   no copy here). Dependabot there opens a pull request for each new
+   `X.Y.Z`; merging it deploys (fikua-docs ADR 0019).
 
-The deploy workflow reaches the VPS through the Cloudflare Access
-tunnel (`vps.fikua.com`), scp's `deploy/compose.yaml` as the source of
-truth, then runs `docker compose pull && up -d`.
-
-Required GitHub secrets (same set as the DSS repo): `DOCKER_USERNAME`,
-`DOCKER_TOKEN`, `VPS_SSH_PRIVATE_KEY`, `CF_ACCESS_CLIENT_ID`,
-`CF_ACCESS_CLIENT_SECRET`. The `prd` environment must be configured
-with required reviewers in Settings → Environments → prd.
+No VPS or registry secret is needed here: the image is pushed with
+`GITHUB_TOKEN`.
 
 ## Architecture decisions
 
