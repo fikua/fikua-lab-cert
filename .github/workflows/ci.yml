@@ -21,7 +21,7 @@ permissions:
 jobs:
   gitleaks:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    uses: fikua/fikua-ci-workflows/.github/workflows/gitleaks.yml@383c2bdf97121b1405704f30468b0a45272cae73  # v1.2.0
+    uses: fikua/fikua-ci-workflows/.github/workflows/gitleaks.yml@617baa88c2f37b53b84a9024f72298da1caa35cf  # v1.3.0
 
   release:
     if: github.event_name != 'pull_request'
