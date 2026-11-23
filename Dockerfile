@@ -11,7 +11,7 @@
 # The -otel variant ships ngx_otel_module (traces over OTLP/gRPC to the
 # Collector, fikua-docs conv-observability.md); its nginx.conf does not
 # load it, hence the sed.
-FROM nginx:1.30.7-alpine-otel@sha256:a05474d618c6a5da1081380cb54728f53743bc295b04f6dc5378a6282c90d190
+FROM nginx:1.31.9-alpine-otel@sha256:07c2b712ff8261f6990b77ca4a7d9556936239489501e8dd831cc50daf221974
 
 # Runs as the unprivileged nginx user: port 8080, pid file in /tmp, and
 # the directories the entrypoint (envsubst) and nginx write to owned by it.
